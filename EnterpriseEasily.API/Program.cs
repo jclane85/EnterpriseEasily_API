@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using EnterpriseEasily.API.Data;
+using EnterpriseEasily.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,6 +53,9 @@ builder.Services.AddHttpClient("MusicBrainz", client =>
     client.DefaultRequestHeaders.Add("User-Agent", "EnterpriseEasily/1.0 (https://github.com/jclane85)");
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+
+// Services
+builder.Services.AddScoped<MusicBrainzService>();
 
 var app = builder.Build();
 
