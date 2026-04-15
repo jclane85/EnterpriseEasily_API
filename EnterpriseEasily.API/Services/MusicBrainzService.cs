@@ -83,6 +83,48 @@ public class MusicBrainzService
                 });
             }
 
+            // On page 1, boost local songs that have tabs but weren't in MB results
+            if (page == 1)
+            {
+                var mbSongIds = songs.Select(s => s.Id).ToHashSet();
+                var queryLowerDb = query.ToLowerInvariant().Trim();
+
+                var localMatches = await _db.Songs
+                    .Include(s => s.Artist)
+                    .Where(s => s.Title.ToLower().Contains(queryLowerDb)
+                             || s.Artist.Name.ToLower().Contains(queryLowerDb))
+                    .Where(s => _db.GuitarTabs.Any(t => t.SongId == s.Id && t.Status == "Approved"))
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var local in localMatches)
+                {
+                    if (mbSongIds.Contains(local.Id)) continue;
+
+                    var tabCount = await _db.GuitarTabs
+                        .CountAsync(t => t.SongId == local.Id && t.Status == "Approved");
+
+                    songs.Add(new SongDto
+                    {
+                        Id = local.Id,
+                        Title = local.Title,
+                        ArtistName = local.Artist.Name,
+                        MusicBrainzRecordingId = local.MusicBrainzRecordingId,
+                        TabCount = tabCount
+                    });
+                }
+            }
+
+            // Sort: best text match first, then by tab count, then by MusicBrainz score
+            var queryLower = query.ToLowerInvariant().Trim();
+            var mbScores = mbResponse.Recordings.ToDictionary(r => r.Id, r => r.Score);
+
+            songs = songs
+                .OrderByDescending(s => ComputeRelevance(s, queryLower))
+                .ThenByDescending(s => s.TabCount)
+                .ThenByDescending(s => mbScores.GetValueOrDefault(s.MusicBrainzRecordingId, 0))
+                .ToList();
+
             return new SearchResultDto
             {
                 Songs = songs,
@@ -95,6 +137,37 @@ public class MusicBrainzService
         {
             _rateLimiter.Release();
         }
+    }
+
+    private static int ComputeRelevance(SongDto song, string queryLower)
+    {
+        var title = song.Title.ToLowerInvariant();
+        var artist = song.ArtistName.ToLowerInvariant();
+
+        // Exact matches (highest)
+        if (title == queryLower) return 100;
+        if (artist == queryLower) return 95;
+
+        // Title or artist equals one of the query words
+        var queryWords = queryLower.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // Starts-with matches
+        if (title.StartsWith(queryLower)) return 85;
+        if (artist.StartsWith(queryLower)) return 80;
+
+        // Contains as a whole phrase
+        if (title.Contains(queryLower)) return 70;
+        if (artist.Contains(queryLower)) return 65;
+
+        // Any query word matches title or artist start
+        if (queryWords.Any(w => title.StartsWith(w))) return 50;
+        if (queryWords.Any(w => artist.StartsWith(w))) return 45;
+
+        // Any query word found in title or artist
+        if (queryWords.Any(w => title.Contains(w))) return 30;
+        if (queryWords.Any(w => artist.Contains(w))) return 25;
+
+        return 0;
     }
 
     private async Task<(Artist artist, Song song)> CacheRecordingAsync(
@@ -157,6 +230,7 @@ public class MusicBrainzRecording
 {
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
+    public int Score { get; set; }
 
     [System.Text.Json.Serialization.JsonPropertyName("artist-credit")]
     public List<MusicBrainzArtistCredit>? ArtistCredit { get; set; }

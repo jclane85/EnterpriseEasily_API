@@ -25,9 +25,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// EF Core
+// EF Core — SQLite for local dev
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // CORS — allow the React dev server
 builder.Services.AddCors(options =>
@@ -58,6 +58,13 @@ builder.Services.AddHttpClient("MusicBrainz", client =>
 builder.Services.AddScoped<MusicBrainzService>();
 
 var app = builder.Build();
+
+// Auto-create / migrate the database
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
