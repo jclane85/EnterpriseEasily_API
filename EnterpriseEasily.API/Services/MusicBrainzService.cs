@@ -22,7 +22,7 @@ public class MusicBrainzService
         _logger = logger;
     }
 
-    public async Task<SearchResultDto> SearchAsync(string query, int page = 1, int pageSize = 20)
+    public virtual async Task<SearchResultDto> SearchAsync(string query, int page = 1, int pageSize = 20)
     {
         // MusicBrainz uses 0-based offset
         var offset = (page - 1) * pageSize;
